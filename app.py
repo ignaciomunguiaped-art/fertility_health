@@ -119,6 +119,9 @@ def _valid_target(v):
 # PROCESAR UN SOLO ARCHIVO (MISMA LÓGICA DEL ESTUDIANTE)
 # =========================================================
 def process_single_blob(bucket_name, blob_name, limite=1000, chunksize=500):
+    
+    if blob_name.endswith("/") or not blob_name.endswith(".csv"):
+        return None
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -179,23 +182,28 @@ if st.button("Procesar siguiente archivo"):
         st.info(f"Se encontraron {len(st.session_state.blobs)} archivos.")
 
     blobs = st.session_state.blobs
-    idx = st.session_state.index
+    idx   = st.session_state.index
 
     if idx >= len(blobs):
         st.success("Todos los archivos ya fueron procesados.")
     else:
-        blob = blobs[idx]
+        blob  = blobs[idx]
         short = blob.name.split("/")[-1]
-        st.write(f"Procesando {idx+1}/{len(blobs)}: `{short}`")
 
-        score = process_single_blob(bucket_name, blob.name, int(limite))
+        # ✅ NUEVO: saltar carpetas/no-CSV automáticamente
+        if not short or not blob.name.endswith(".csv"):
+            st.info(f"Saltando entrada no válida: `{blob.name}`")
+            st.session_state.index += 1
+        else:
+            st.write(f"Procesando {idx+1}/{len(blobs)}: `{short}`")
+            score = process_single_blob(bucket_name, blob.name, int(limite))
 
-        if score is not None:
-            st.session_state.history.append(score)
-            st.write(f"{blob.name} — R² acumulado: **{score:.3f}**")
-            save_model_to_gcs(model, bucket_name, MODEL_PATH)
+            if score is not None:
+                st.session_state.history.append(score)
+                st.write(f"{blob.name} — R² acumulado: **{score:.3f}**")
+                save_model_to_gcs(model, bucket_name, MODEL_PATH)
 
-        st.session_state.index += 1
+            st.session_state.index += 1
 
 # =========================================================
 # ESTADO FINAL
