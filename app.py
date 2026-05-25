@@ -4,7 +4,14 @@ import numpy as np
 import io
 import pickle
 from google.cloud import storage
-from river import linear_model, preprocessing, metrics  # igual que la versión que funciona
+from river import linear_model, preprocessing, metrics
+
+# Importar optim con fallback por si la versión de River no lo tiene
+try:
+    from river import optim as river_optim
+    _USE_CUSTOM_LR = True
+except ImportError:
+    _USE_CUSTOM_LR = False
 
 # =========================================================
 # CONFIGURACIÓN
@@ -54,8 +61,7 @@ def load_model_from_gcs(bkt):
 
 def save_history_to_gcs(bkt):
     data = {
-        "history_r2":      st.session_state.history,
-        "history_file":    st.session_state.history_file,
+        "history":         st.session_state.history,
         "processed_files": st.session_state.processed_files,
         "index":           st.session_state.index,
     }
@@ -82,6 +88,23 @@ def delete_blob(bkt, path):
         pass
 
 # =========================================================
+# MODELO — learning rate bajo para evitar divergencia
+# =========================================================
+def new_model():
+    if _USE_CUSTOM_LR:
+        return preprocessing.StandardScaler() | linear_model.LinearRegression(
+            optimizer=river_optim.SGD(0.001),
+            intercept_lr=0.001
+        )
+    # Fallback: sin optim pero con intercept_lr bajo si está disponible
+    try:
+        return preprocessing.StandardScaler() | linear_model.LinearRegression(
+            intercept_lr=0.001
+        )
+    except TypeError:
+        return preprocessing.StandardScaler() | linear_model.LinearRegression()
+
+# =========================================================
 # BOTÓN REINICIAR
 # =========================================================
 if st.button("🗑️ Reiniciar entrenamiento y borrar modelo guardado"):
@@ -92,7 +115,6 @@ if st.button("🗑️ Reiniciar entrenamiento y borrar modelo guardado"):
 
 # =========================================================
 # INICIALIZAR SESSION STATE
-# Detecta cambio de bucket igual que antes
 # =========================================================
 if (
     "loaded_bucket" not in st.session_state
@@ -100,27 +122,28 @@ if (
 ):
     model = load_model_from_gcs(bucket_name)
     if model is None:
-        model = preprocessing.StandardScaler() | linear_model.LinearRegression()
+        model = new_model()
 
     hist = load_history_from_gcs(bucket_name)
 
-    st.session_state.model            = model
-    st.session_state.metric           = metrics.R2()
-    st.session_state.history          = hist["history_r2"]      if hist else []
-    st.session_state.history_file     = hist["history_file"]    if hist else []
-    st.session_state.processed_files  = hist["processed_files"] if hist else []
-    st.session_state.index            = hist["index"]           if hist else 0
-    st.session_state.blobs            = None
-    st.session_state.loaded_bucket    = bucket_name
+    st.session_state.model           = model
+    st.session_state.metric          = metrics.R2()
+    st.session_state.metric_mae      = metrics.MAE()
+    st.session_state.history         = hist["history"]         if hist else []
+    st.session_state.processed_files = hist["processed_files"] if hist else []
+    st.session_state.index           = hist["index"]           if hist else 0
+    st.session_state.blobs           = None
+    st.session_state.loaded_bucket   = bucket_name
 
     if hist:
         st.info(f"Historial recuperado: {hist['index']} archivos procesados previamente.")
 
-model  = st.session_state.model
-metric = st.session_state.metric
+model      = st.session_state.model
+metric     = st.session_state.metric
+metric_mae = st.session_state.metric_mae
 
 # =========================================================
-# FEATURE ENGINEERING — idéntico a la versión que funciona
+# FEATURE ENGINEERING
 # =========================================================
 def _parse_time_fields(row):
     if "pickup_hour" in row and pd.notna(row["pickup_hour"]):
@@ -140,25 +163,22 @@ def _extract_x(row):
     dist = float(pd.to_numeric(row.get("trip_distance", 0), errors="coerce") or 0)
     psg  = float(pd.to_numeric(row.get("passenger_count", 0), errors="coerce") or 0)
     dt, hour = _parse_time_fields(row)
-    dow     = int(dt.weekday()) if isinstance(dt, pd.Timestamp) else 0
-    weekend = 1.0 if dow >= 5 else 0.0
+    dow      = int(dt.weekday()) if isinstance(dt, pd.Timestamp) else 0
     return {
         "dist":       dist,
         "log_dist":   float(np.log1p(max(dist, 0))),
         "pass":       psg,
         "hour":       float(hour),
         "dow":        float(dow),
-        "is_weekend": weekend,
+        "is_weekend": 1.0 if dow >= 5 else 0.0,
     }
 
 def _valid_target(v):
     y = pd.to_numeric(v, errors="coerce")
-    if pd.isna(y):
-        return None
-    return float(y)
+    return None if pd.isna(y) else float(y)
 
 # =========================================================
-# PROCESAR — idéntico a la versión que funciona
+# PROCESAR
 # =========================================================
 def process_single_blob(bkt, blob_name, limite=1000, chunksize=500):
     if blob_name.endswith("/") or not blob_name.endswith(".csv"):
@@ -188,20 +208,28 @@ def process_single_blob(bkt, blob_name, limite=1000, chunksize=500):
             for _, row in chunk.iterrows():
                 if count >= limite:
                     break
+
                 y = _valid_target(row["fare_amount"])
                 if y is None:
                     continue
+
                 x    = _extract_x(row)
                 pred = model.predict_one(x)
+
+                # ✅ FIX: clipear pred y manejar None antes de actualizar métricas
+                if pred is not None and np.isfinite(pred):
+                    pred_eval = float(np.clip(pred, 2, 200))
+                    metric.update(y, pred_eval)
+                    metric_mae.update(y, pred_eval)
+
                 model.learn_one(x, y)
-                metric.update(y, pred)
                 count += 1
 
     except Exception as e:
         st.warning(f"Error en {blob_name}: {e}")
         return None
 
-    return metric.get()
+    return metric.get(), metric_mae.get(), count
 
 # =========================================================
 # BOTÓN: PROCESAR SIGUIENTE ARCHIVO
@@ -211,8 +239,7 @@ st.subheader("Procesamiento incremental")
 if st.button("▶️ Procesar siguiente archivo"):
 
     if st.session_state.blobs is None:
-        client = storage.Client()
-        blobs  = list(client.bucket(bucket_name).list_blobs(prefix=prefix))
+        blobs = list(storage.Client().bucket(bucket_name).list_blobs(prefix=prefix))
         st.session_state.blobs = blobs
         st.info(f"Se encontraron {len(blobs)} archivos.")
 
@@ -229,13 +256,17 @@ if st.button("▶️ Procesar siguiente archivo"):
             st.info(f"Saltando: `{blob.name}`")
         else:
             st.write(f"Procesando {idx+1}/{len(blobs)}: `{short}`")
-            score = process_single_blob(bucket_name, blob.name, int(limite))
+            result = process_single_blob(bucket_name, blob.name, int(limite))
 
-            if score is not None:
-                st.session_state.history.append(score)
-                st.session_state.history_file.append(short)
+            if result is not None:
+                r2, mae, count = result
+                entry = {"archivo": short, "R2_acumulado": r2, "MAE_acumulado": mae, "registros": count}
+                st.session_state.history.append(entry)
                 st.session_state.processed_files.append(short)
-                st.write(f"R² acumulado: **{score:.4f}**")
+
+                st.write(f"Registros procesados: **{count}**")
+                st.write(f"R² acumulado: **{r2:.4f}**")
+                st.write(f"MAE acumulado: **{mae:.4f}**")
 
                 save_model_to_gcs(model, bucket_name)
                 save_history_to_gcs(bucket_name)
@@ -248,21 +279,22 @@ if st.button("▶️ Procesar siguiente archivo"):
 st.markdown("---")
 st.subheader("Estado actual del modelo")
 
-last_r2 = st.session_state.history[-1] if st.session_state.history else 0.0
+last = st.session_state.history[-1] if st.session_state.history else {}
 st.write(f"Archivos procesados: **{st.session_state.index}**")
-st.write(f"R² acumulado actual: **{last_r2:.4f}**")
+st.write(f"R² acumulado actual: **{last.get('R2_acumulado', 0.0):.4f}**")
+st.write(f"MAE acumulado actual: **{last.get('MAE_acumulado', 0.0):.4f}**")
 
 if st.session_state.history:
-    df_hist = pd.DataFrame({
-        "archivo":      st.session_state.processed_files,
-        "R2_acumulado": st.session_state.history,
-    })
+    df_hist = pd.DataFrame(st.session_state.history)
 
     st.subheader("Historial de procesamiento")
     st.dataframe(df_hist)
 
     st.subheader("Evolución R² acumulado")
     st.line_chart(df_hist[["R2_acumulado"]])
+
+    st.subheader("Evolución MAE acumulado")
+    st.line_chart(df_hist[["MAE_acumulado"]])
 
 st.caption("Cloud Run + River • Dataset público de taxis NYC")
 
