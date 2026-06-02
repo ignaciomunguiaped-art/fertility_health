@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Cloud Storage Configuration
-GCS_BUCKET = os.environ.get('GCS_BUCKET', 'fertility_healh')
+GCS_BUCKET = os.environ.get('GCS_BUCKET', 'fertility_health')
 PROJECT_ID = os.environ.get('GCP_PROJECT', 'ml-big-data-ignacio')
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -93,16 +93,23 @@ def cargar_modelos_desde_gcs():
         return None, None, None
 
 # ════════════════════════════════════════════════════════════════════════════
-# CARGAR MODELOS AL INICIAR
+# MODELOS (lazy loading — se cargan en la primera predicción)
 # ════════════════════════════════════════════════════════════════════════════
 
-logger.info(f"🔄 Inicializando OvaBoost...")
-logger.info(f"📦 Bucket GCS: {GCS_BUCKET}")
+xgb_model = None
+encoders = None
+le_target = None
+_models_loaded = False
 
-xgb_model, encoders, le_target = cargar_modelos_desde_gcs()
-
-if xgb_model is None:
-    logger.warning("⚠️ No se pudo cargar el modelo. Algunos endpoints no funcionarán.")
+def _ensure_models():
+    global xgb_model, encoders, le_target, _models_loaded
+    if _models_loaded:
+        return
+    logger.info(f"🔄 Cargando modelos desde GCS (bucket: {GCS_BUCKET})...")
+    xgb_model, encoders, le_target = cargar_modelos_desde_gcs()
+    _models_loaded = True
+    if xgb_model is None:
+        logger.warning("⚠️ No se pudo cargar el modelo.")
 
 # ════════════════════════════════════════════════════════════════════════════
 # VARIABLES Y CONFIGURACIÓN
@@ -159,6 +166,7 @@ def hacer_prediccion():
     Retorna: JSON con predicción y probabilidades
     """
     try:
+        _ensure_models()
         # Validar que el modelo esté cargado
         if xgb_model is None:
             return jsonify({
@@ -245,15 +253,12 @@ def obtener_variables():
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check para Cloud Run"""
-    status = {
+    return jsonify({
         'status': 'healthy',
         'model_loaded': xgb_model is not None,
         'encoders_loaded': encoders is not None,
         'target_encoder_loaded': le_target is not None
-    }
-    
-    code = 200 if all(status.values()) else 503
-    return jsonify(status), code
+    }), 200
 
 # ════════════════════════════════════════════════════════════════════════════
 # FUNCIONES AUXILIARES
