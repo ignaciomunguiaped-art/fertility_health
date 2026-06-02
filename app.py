@@ -67,21 +67,21 @@ def cargar_modelos_desde_gcs():
     try:
         # Descargar modelo XGBoost
         xgb_local = os.path.join(temp_dir, 'modelo_xgboost_optuna.pkl')
-        if descargar_de_gcs(GCS_BUCKET, 'modelos/modelo_xgboost_optuna.pkl', xgb_local):
+        if descargar_de_gcs(GCS_BUCKET, 'models/modelo_xgboost_optuna.pkl', xgb_local):
             with open(xgb_local, 'rb') as f:
                 xgb_model = pickle.load(f)
             logger.info("✅ Modelo XGBoost cargado desde GCS")
-        
+
         # Descargar encoders
-        encoders_local = os.path.join(temp_dir, 'label_encoders.pkl')
-        if descargar_de_gcs(GCS_BUCKET, 'modelos/label_encoders.pkl', encoders_local):
+        encoders_local = os.path.join(temp_dir, 'label_encoder_features.pkl')
+        if descargar_de_gcs(GCS_BUCKET, 'models/label_encoder_features.pkl', encoders_local):
             with open(encoders_local, 'rb') as f:
                 encoders = pickle.load(f)
             logger.info("✅ Encoders cargados desde GCS")
-        
+
         # Descargar encoder del target
         target_local = os.path.join(temp_dir, 'label_encoder_target.pkl')
-        if descargar_de_gcs(GCS_BUCKET, 'modelos/label_encoder_target.pkl', target_local):
+        if descargar_de_gcs(GCS_BUCKET, 'models/label_encoder_target.pkl', target_local):
             with open(target_local, 'rb') as f:
                 le_target = pickle.load(f)
             logger.info("✅ Target encoder cargado desde GCS")
@@ -198,17 +198,20 @@ def hacer_prediccion():
             }), 400
         
         # Encoding de variables categóricas
+        # Treatment_Type se codifica con LabelEncoder; el resto de strings
+        # se convierten a Categorical para que XGBoost las procese de forma nativa.
         df_encoded = df_input.copy()
-        if encoders:
-            for col in df_encoded.select_dtypes(include='object').columns:
-                if col in encoders:
-                    try:
-                        df_encoded[col] = encoders[col].transform(df_encoded[col])
-                    except ValueError as e:
-                        return jsonify({
-                            'error': f'Valor inválido en {col}: {str(e)}',
-                            'status': 400
-                        }), 400
+        if encoders is not None:
+            try:
+                df_encoded['Treatment_Type'] = encoders.transform(df_encoded['Treatment_Type'])
+            except ValueError as e:
+                return jsonify({
+                    'error': f'Valor inválido en Treatment_Type: {str(e)}',
+                    'status': 400
+                }), 400
+        cat_cols = ['Menstrual_Regularity', 'PCOS', 'Stress_Level', 'Alcohol_Intake']
+        for col in cat_cols:
+            df_encoded[col] = df_encoded[col].astype('category')
         
         # Predicción
         prediccion = xgb_model.predict(df_encoded)[0]
