@@ -15,7 +15,7 @@ import tempfile
 # ════════════════════════════════════════════════════════════════════════════
 
 app = Flask(__name__)
-app.config['JSON_SORT_KEYS'] = False
+app.json.sort_keys = False
 
 # Logging
 logging.basicConfig(level=logging.INFO)
