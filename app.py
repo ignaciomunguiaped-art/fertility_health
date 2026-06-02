@@ -294,6 +294,6 @@ def error_servidor(error):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"🚀 Iniciando OvaBoost en puerto {port}")
+    logger.info(f"🚀 Iniciando Baby Predictor en puerto {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
 

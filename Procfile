@@ -1,1 +1,1 @@
-web: streamlit run app.py --server.port=8080 --server.address=0.0.0.0
+web: gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 --access-logfile - --error-logfile - app:app
