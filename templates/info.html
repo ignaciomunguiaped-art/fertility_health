@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OvaBoost - Información del Modelo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h2 {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .section h3 {
+            color: #333;
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+
+        .section p, .section li {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .section ul {
+            margin-left: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        table th, table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        table th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .metric-box {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .metric-box strong {
+            color: #667eea;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 30px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: transform 0.3s;
+        }
+
+        .back-link:hover {
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                padding: 20px;
+            }
+
+            table {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ℹ️ Información del Modelo OvaBoost</h1>
+            <p>Predicción de Resultados de Fertilidad con Machine Learning</p>
+        </div>
+
+        <div class="content">
+            <!-- SOBRE EL MODELO -->
+            <div class="section">
+                <h2>📊 Sobre el Modelo</h2>
+                <p>
+                    OvaBoost es un modelo de predicción entrenado con <strong>800 casos reales</strong> de parejas 
+                    que buscan concebir. Utiliza <strong>XGBoost</strong>, un algoritmo de aprendizaje automático 
+                    de última generación, para predecir la probabilidad de éxito en el resultado de embarazo.
+                </p>
+                <div class="metric-box">
+                    <strong>Desempeño del Modelo:</strong><br>
+                    • Precisión (Accuracy): 91.87%<br>
+                    • ROC-AUC: 0.9638 (Excelente discriminación)<br>
+                    • Sensibilidad (Recall): 94.83%<br>
+                    • Especificidad: Evita 94% de falsos positivos
+                </div>
+            </div>
+
+            <!-- VARIABLES UTILIZADAS -->
+            <div class="section">
+                <h2>📋 Variables Utilizadas (12 variables)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Variable</th>
+                            <th>Tipo</th>
+                            <th>Descripción</th>
+                            <th>Rango</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Female_Age</strong></td>
+                            <td>Numérica</td>
+                            <td>Edad de la mujer</td>
+                            <td>20-50 años</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Male_Age</strong></td>
+                            <td>Numérica</td>
+                            <td>Edad del hombre</td>
+                            <td>20-70 años</td>
+                        </tr>
+                        <tr>
+                            <td><strong>BMI</strong></td>
+                            <td>Numérica</td>
+                            <td>Índice de Masa Corporal</td>
+                            <td>15-40 kg/m²</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Menstrual_Regularity</strong></td>
+                            <td>Categórica</td>
+                            <td>Regular o Irregular</td>
+                            <td>Regular, Irregular</td>
+                        </tr>
+                        <tr>
+                            <td><strong>PCOS</strong></td>
+                            <td>Categórica</td>
+                            <td>Síndrome de Ovario Poliquístico</td>
+                            <td>No, Yes</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Stress_Level</strong></td>
+                            <td>Categórica</td>
+                            <td>Nivel de estrés percibido</td>
+                            <td>Low, Medium, High</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Smoking</strong></td>
+                            <td>Binaria</td>
+                            <td>¿Fuma?</td>
+                            <td>0 (No), 1 (Sí)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Alcohol_Intake</strong></td>
+                            <td>Categórica</td>
+                            <td>Consumo de alcohol</td>
+                            <td>None, Moderate, High</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Sperm_Count</strong></td>
+                            <td>Numérica</td>
+                            <td>Conteo de esperma en millones/ml</td>
+                            <td>0-200 M/ml</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Motility_%</strong></td>
+                            <td>Numérica</td>
+                            <td>Porcentaje de movilidad espermática</td>
+                            <td>0-100%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Trying_Duration</strong></td>
+                            <td>Numérica</td>
+                            <td>Meses intentando concebir</td>
+                            <td>1-120 meses</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Treatment_Type</strong></td>
+                            <td>Categórica</td>
+                            <td>Tipo de tratamiento</td>
+                            <td>IVF, Medication, None</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- METODOLOGÍA -->
+            <div class="section">
+                <h2>🔬 Metodología</h2>
+                <h3>Preparación de Datos</h3>
+                <ul>
+                    <li>Dataset: 800 casos de parejas buscando concebir</li>
+                    <li>Clases: 72.75% Éxito, 27.25% Fracaso</li>
+                    <li>Manejo de desbalance: Estratificación + class_weight</li>
+                </ul>
+
+                <h3>Optimización con Optuna</h3>
+                <ul>
+                    <li>50 trials de búsqueda automática por modelo</li>
+                    <li>Validación cruzada: 5-fold en training set</li>
+                    <li>Métrica de optimización: ROC-AUC (insensible a desbalance)</li>
+                    <li>Sampler: TPE (Tree-structured Parzen Estimator)</li>
+                </ul>
+
+                <h3>Hiperparámetros Óptimos (XGBoost)</h3>
+                <ul>
+                    <li>n_estimators: 267</li>
+                    <li>max_depth: 7</li>
+                    <li>learning_rate: 0.2054</li>
+                    <li>subsample: 0.5296</li>
+                    <li>colsample_bytree: 0.8778</li>
+                    <li>gamma: 4.2565</li>
+                    <li>min_child_weight: 2</li>
+                </ul>
+            </div>
+
+            <!-- INTERPRETACIÓN DE RESULTADOS -->
+            <div class="section">
+                <h2>🎯 Interpretación de Resultados</h2>
+                <p>
+                    El modelo retorna tres valores principales:
+                </p>
+                <ul>
+                    <li><strong>Predicción:</strong> "Success" o "Failure" - Clasificación binaria</li>
+                    <li><strong>Probabilidad de Éxito:</strong> Porcentaje de probabilidad de embarazo exitoso</li>
+                    <li><strong>Confianza:</strong> Nivel de certeza del modelo (máximo entre ambas clases)</li>
+                </ul>
+
+                <h3>Ejemplos de Interpretación:</h3>
+                <div class="metric-box">
+                    <strong>Ejemplo 1: Predicción "Success" con 92% de Confianza</strong><br>
+                    El modelo predice resultado exitoso con alta confianza. Las probabilidades son 
+                    ~92% éxito y ~8% fracaso.
+                </div>
+                <div class="metric-box">
+                    <strong>Ejemplo 2: Predicción "Failure" con 70% de Confianza</strong><br>
+                    El modelo predice fracaso pero con menor certeza. Las probabilidades son 
+                    ~30% éxito y ~70% fracaso. Requiere mayor consideración.
+                </div>
+            </div>
+
+            <!-- LIMITACIONES Y CONSIDERACIONES -->
+            <div class="section">
+                <h2>⚠️ Limitaciones y Consideraciones</h2>
+                <ul>
+                    <li><strong>Uso Médico:</strong> Esta herramienta es de apoyo a decisiones clínicas, 
+                        no reemplaza el juicio profesional médico.</li>
+                    <li><strong>Datos de Entrenamiento:</strong> El modelo fue entrenado con 800 casos. 
+                        Datos muy diferentes pueden producir resultados menos fiables.</li>
+                    <li><strong>Factores No Incluidos:</strong> Existen muchos factores biológicos no medibles 
+                        que afectan la fertilidad y no están en el modelo.</li>
+                    <li><strong>Diversidad Poblacional:</strong> El modelo se entrenó con datos de una población 
+                        específica. La generalización a otras poblaciones requiere cuidado.</li>
+                    <li><strong>Privacidad:</strong> Los datos ingresados se procesan localmente. 
+                        Consulta nuestra política de privacidad para más información.</li>
+                </ul>
+            </div>
+
+            <!-- CONTACTO Y SOPORTE -->
+            <div class="section">
+                <h2>📞 Contacto y Soporte</h2>
+                <p>
+                    Para preguntas sobre el modelo, reportar problemas o solicitar más información:
+                </p>
+                <ul>
+                    <li>Email: soporte@ovaboost.com</li>
+                    <li>Documentación: <a href="#" style="color: #667eea;">Ver documentación completa</a></li>
+                    <li>Reporte de Errores: <a href="#" style="color: #667eea;">GitHub Issues</a></li>
+                </ul>
+            </div>
+
+            <a href="/" class="back-link">← Volver al Predictor</a>
+        </div>
+    </div>
+</body>
+</html>

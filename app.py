@@ -1,304 +1,294 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import io
+
+import os
 import pickle
+import json
+import numpy as np
+import pandas as pd
+from flask import Flask, render_template, request, jsonify
+from sklearn.preprocessing import LabelEncoder
+import logging
 from google.cloud import storage
-from river import linear_model, preprocessing, metrics
+import tempfile
 
-# Importar optim con fallback por si la versión de River no lo tiene
-try:
-    from river import optim as river_optim
-    _USE_CUSTOM_LR = True
-except ImportError:
-    _USE_CUSTOM_LR = False
-
-# =========================================================
+# ════════════════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN
-# =========================================================
-st.set_page_config(page_title="Aprendizaje en línea", page_icon="🚕")
-st.title("Aprendizaje en línea con River (Step-by-step desde GCS)")
+# ════════════════════════════════════════════════════════════════════════════
 
-st.markdown("""
-Este panel permite entrenar un modelo de **aprendizaje incremental** con River,
-procesando **un archivo por clic** desde Google Cloud Storage (GCS).
-""")
+app = Flask(__name__)
+app.config['JSON_SORT_KEYS'] = False
 
-# =========================================================
-# RUTAS GCS
-# =========================================================
-MODEL_PATH   = "models/model_incremental.pkl"
-HISTORY_PATH = "models/history_incremental.pkl"
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# =========================================================
-# PARÁMETROS
-# =========================================================
-bucket_name = st.text_input("Bucket de GCS:", "ml_big_data")
-prefix      = st.text_input("Prefijo/carpeta:", "tlc_yellow_trips_2022/")
-limite      = st.number_input("Filas a procesar por archivo:", value=1000, step=100)
+# Cloud Storage Configuration
+GCS_BUCKET = os.environ.get('GCS_BUCKET', 'fertility_healh')
+PROJECT_ID = os.environ.get('GCP_PROJECT', 'ml-big-data-ignacio')
 
-st.markdown("---")
+# ════════════════════════════════════════════════════════════════════════════
+# FUNCIONES PARA CLOUD STORAGE
+# ════════════════════════════════════════════════════════════════════════════
 
-# =========================================================
-# FUNCIONES GCS
-# =========================================================
-def save_model_to_gcs(model, bkt):
+def descargar_de_gcs(bucket_name, file_path, local_path):
+    """
+    Descargar archivo de Cloud Storage
+    
+    Args:
+        bucket_name: Nombre del bucket
+        file_path: Ruta del archivo en GCS
+        local_path: Ruta local donde guardar
+    """
     try:
-        storage.Client().bucket(bkt).blob(MODEL_PATH).upload_from_string(pickle.dumps(model))
-        st.success(f"Modelo guardado en GCS: `{MODEL_PATH}`")
+        logger.info(f"📥 Descargando {file_path} desde GCS...")
+        
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(file_path)
+        
+        blob.download_to_filename(local_path)
+        logger.info(f"✅ Descargado: {local_path}")
+        return True
     except Exception as e:
-        st.warning(f"No se pudo guardar el modelo: {e}")
+        logger.error(f"❌ Error descargando {file_path}: {str(e)}")
+        return False
 
-def load_model_from_gcs(bkt):
+def cargar_modelos_desde_gcs():
+    """
+    Cargar modelos desde Cloud Storage
+    Retorna: (xgb_model, encoders, le_target)
+    """
+    xgb_model = None
+    encoders = None
+    le_target = None
+    
+    # Crear directorio temporal para modelos
+    temp_dir = tempfile.gettempdir()
+    
     try:
-        blob = storage.Client().bucket(bkt).blob(MODEL_PATH)
-        if blob.exists():
-            st.info("Modelo cargado desde GCS.")
-            return pickle.loads(blob.download_as_bytes())
+        # Descargar modelo XGBoost
+        xgb_local = os.path.join(temp_dir, 'modelo_xgboost_optuna.pkl')
+        if descargar_de_gcs(GCS_BUCKET, 'modelos/modelo_xgboost_optuna.pkl', xgb_local):
+            with open(xgb_local, 'rb') as f:
+                xgb_model = pickle.load(f)
+            logger.info("✅ Modelo XGBoost cargado desde GCS")
+        
+        # Descargar encoders
+        encoders_local = os.path.join(temp_dir, 'label_encoders.pkl')
+        if descargar_de_gcs(GCS_BUCKET, 'modelos/label_encoders.pkl', encoders_local):
+            with open(encoders_local, 'rb') as f:
+                encoders = pickle.load(f)
+            logger.info("✅ Encoders cargados desde GCS")
+        
+        # Descargar encoder del target
+        target_local = os.path.join(temp_dir, 'label_encoder_target.pkl')
+        if descargar_de_gcs(GCS_BUCKET, 'modelos/label_encoder_target.pkl', target_local):
+            with open(target_local, 'rb') as f:
+                le_target = pickle.load(f)
+            logger.info("✅ Target encoder cargado desde GCS")
+        
+        return xgb_model, encoders, le_target
+    
     except Exception as e:
-        st.warning(f"No se pudo cargar el modelo: {e}")
-    return None
+        logger.error(f"❌ Error cargando modelos: {str(e)}")
+        return None, None, None
 
-def save_history_to_gcs(bkt):
-    data = {
-        "history":         st.session_state.history,
-        "processed_files": st.session_state.processed_files,
-        "index":           st.session_state.index,
-    }
+# ════════════════════════════════════════════════════════════════════════════
+# CARGAR MODELOS AL INICIAR
+# ════════════════════════════════════════════════════════════════════════════
+
+logger.info(f"🔄 Inicializando OvaBoost...")
+logger.info(f"📦 Bucket GCS: {GCS_BUCKET}")
+
+xgb_model, encoders, le_target = cargar_modelos_desde_gcs()
+
+if xgb_model is None:
+    logger.warning("⚠️ No se pudo cargar el modelo. Algunos endpoints no funcionarán.")
+
+# ════════════════════════════════════════════════════════════════════════════
+# VARIABLES Y CONFIGURACIÓN
+# ════════════════════════════════════════════════════════════════════════════
+
+FEATURE_NAMES = [
+    'Female_Age', 'Male_Age', 'BMI', 'Menstrual_Regularity', 'PCOS',
+    'Stress_Level', 'Smoking', 'Alcohol_Intake', 'Sperm_Count_Million_per_ml',
+    'Motility_%', 'Trying_Duration_Months', 'Treatment_Type'
+]
+
+CATEGORICAL_OPTIONS = {
+    'Menstrual_Regularity': ['Regular', 'Irregular'],
+    'PCOS': ['No', 'Yes'],
+    'Stress_Level': ['Low', 'Medium', 'High'],
+    'Smoking': [0, 1],
+    'Alcohol_Intake': ['Moderate', 'High', 'None'],
+    'Treatment_Type': ['IVF', 'Medication', 'None']
+}
+
+RANGES = {
+    'Female_Age': (20, 50),
+    'Male_Age': (20, 70),
+    'BMI': (15, 40),
+    'Sperm_Count_Million_per_ml': (0, 200),
+    'Motility_%': (0, 100),
+    'Trying_Duration_Months': (1, 120)
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# RUTAS - FRONTEND
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route('/')
+def index():
+    """Página principal - Formulario de entrada"""
+    return render_template('index.html', 
+                         categorical_options=CATEGORICAL_OPTIONS)
+
+@app.route('/info')
+def info():
+    """Página de información sobre el modelo"""
+    return render_template('info.html')
+
+# ════════════════════════════════════════════════════════════════════════════
+# RUTAS - API
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/prediccion', methods=['POST'])
+def hacer_prediccion():
+    """
+    Endpoint para hacer predicciones
+    Recibe: JSON con datos del usuario
+    Retorna: JSON con predicción y probabilidades
+    """
     try:
-        storage.Client().bucket(bkt).blob(HISTORY_PATH).upload_from_string(pickle.dumps(data))
-    except Exception as e:
-        st.warning(f"No se pudo guardar historial: {e}")
-
-def load_history_from_gcs(bkt):
-    try:
-        blob = storage.Client().bucket(bkt).blob(HISTORY_PATH)
-        if blob.exists():
-            return pickle.loads(blob.download_as_bytes())
-    except Exception:
-        pass
-    return None
-
-def delete_blob(bkt, path):
-    try:
-        blob = storage.Client().bucket(bkt).blob(path)
-        if blob.exists():
-            blob.delete()
-    except Exception:
-        pass
-
-# =========================================================
-# MODELO — learning rate bajo para evitar divergencia
-# =========================================================
-def new_model():
-    if _USE_CUSTOM_LR:
-        return preprocessing.StandardScaler() | linear_model.LinearRegression(
-            optimizer=river_optim.SGD(0.001),
-            intercept_lr=0.001
-        )
-    # Fallback: sin optim pero con intercept_lr bajo si está disponible
-    try:
-        return preprocessing.StandardScaler() | linear_model.LinearRegression(
-            intercept_lr=0.001
-        )
-    except TypeError:
-        return preprocessing.StandardScaler() | linear_model.LinearRegression()
-
-# =========================================================
-# BOTÓN REINICIAR
-# =========================================================
-if st.button("🗑️ Reiniciar entrenamiento y borrar modelo guardado"):
-    delete_blob(bucket_name, MODEL_PATH)
-    delete_blob(bucket_name, HISTORY_PATH)
-    st.session_state.clear()
-    st.success("Entrenamiento reiniciado correctamente.")
-
-# =========================================================
-# INICIALIZAR SESSION STATE
-# =========================================================
-if (
-    "loaded_bucket" not in st.session_state
-    or st.session_state.loaded_bucket != bucket_name
-):
-    model = load_model_from_gcs(bucket_name)
-    if model is None:
-        model = new_model()
-
-    hist = load_history_from_gcs(bucket_name)
-
-    st.session_state.model           = model
-    st.session_state.metric          = metrics.R2()
-    st.session_state.metric_mae      = metrics.MAE()
-    st.session_state.history         = hist["history"]         if hist else []
-    st.session_state.processed_files = hist["processed_files"] if hist else []
-    st.session_state.index           = hist["index"]           if hist else 0
-    st.session_state.blobs           = None
-    st.session_state.loaded_bucket   = bucket_name
-
-    if hist:
-        st.info(f"Historial recuperado: {hist['index']} archivos procesados previamente.")
-
-model      = st.session_state.model
-metric     = st.session_state.metric
-metric_mae = st.session_state.metric_mae
-
-# =========================================================
-# FEATURE ENGINEERING
-# =========================================================
-def _parse_time_fields(row):
-    if "pickup_hour" in row and pd.notna(row["pickup_hour"]):
-        try:
-            hour = int(pd.to_numeric(row["pickup_hour"], errors="coerce"))
-            return None, max(0, min(hour, 23))
-        except Exception:
-            pass
-    for c in ("tpep_pickup_datetime", "lpep_pickup_datetime", "pickup_datetime"):
-        if c in row and pd.notna(row[c]):
-            dt = pd.to_datetime(row[c], errors="coerce", utc=False)
-            if pd.notna(dt):
-                return dt, int(dt.hour)
-    return None, 0
-
-def _extract_x(row):
-    dist = float(pd.to_numeric(row.get("trip_distance", 0), errors="coerce") or 0)
-    psg  = float(pd.to_numeric(row.get("passenger_count", 0), errors="coerce") or 0)
-    dt, hour = _parse_time_fields(row)
-    dow      = int(dt.weekday()) if isinstance(dt, pd.Timestamp) else 0
-    return {
-        "dist":       dist,
-        "log_dist":   float(np.log1p(max(dist, 0))),
-        "pass":       psg,
-        "hour":       float(hour),
-        "dow":        float(dow),
-        "is_weekend": 1.0 if dow >= 5 else 0.0,
-    }
-
-def _valid_target(v):
-    y = pd.to_numeric(v, errors="coerce")
-    return None if pd.isna(y) else float(y)
-
-# =========================================================
-# PROCESAR
-# =========================================================
-def process_single_blob(bkt, blob_name, limite=1000, chunksize=500):
-    if blob_name.endswith("/") or not blob_name.endswith(".csv"):
-        return None
-
-    blob = storage.Client().bucket(bkt).blob(blob_name)
-
-    try:
-        content = blob.download_as_bytes()
-        buffer  = io.BytesIO(content)
-        count   = 0
-
-        for chunk in pd.read_csv(buffer, chunksize=chunksize, low_memory=False):
-            if not {"trip_distance", "passenger_count", "fare_amount"}.issubset(chunk.columns):
-                continue
-
-            for col in ["trip_distance", "passenger_count", "fare_amount"]:
-                chunk[col] = pd.to_numeric(chunk[col], errors="coerce")
-
-            chunk = chunk.replace([np.inf, -np.inf], np.nan).dropna()
-            chunk = chunk[
-                chunk["fare_amount"].between(2, 200) &
-                chunk["trip_distance"].between(0.1, 50) &
-                chunk["passenger_count"].between(1, 6)
-            ]
-
-            for _, row in chunk.iterrows():
-                if count >= limite:
-                    break
-
-                y = _valid_target(row["fare_amount"])
-                if y is None:
-                    continue
-
-                x    = _extract_x(row)
-                pred = model.predict_one(x)
-
-                # ✅ FIX: clipear pred y manejar None antes de actualizar métricas
-                if pred is not None and np.isfinite(pred):
-                    pred_eval = float(np.clip(pred, 2, 200))
-                    metric.update(y, pred_eval)
-                    metric_mae.update(y, pred_eval)
-
-                model.learn_one(x, y)
-                count += 1
-
-    except Exception as e:
-        st.warning(f"Error en {blob_name}: {e}")
-        return None
-
-    return metric.get(), metric_mae.get(), count
-
-# =========================================================
-# BOTÓN: PROCESAR SIGUIENTE ARCHIVO
-# =========================================================
-st.subheader("Procesamiento incremental")
-
-if st.button("▶️ Procesar siguiente archivo"):
-
-    if st.session_state.blobs is None:
-        blobs = list(storage.Client().bucket(bucket_name).list_blobs(prefix=prefix))
-        st.session_state.blobs = blobs
-        st.info(f"Se encontraron {len(blobs)} archivos.")
-
-    blobs = st.session_state.blobs
-    idx   = st.session_state.index
-
-    if idx >= len(blobs):
-        st.success("✅ Todos los archivos ya fueron procesados.")
-    else:
-        blob  = blobs[idx]
-        short = blob.name.split("/")[-1]
-
-        if not short or not blob.name.endswith(".csv"):
-            st.info(f"Saltando: `{blob.name}`")
+        # Validar que el modelo esté cargado
+        if xgb_model is None:
+            return jsonify({
+                'error': 'Modelo no disponible. Verifica la conexión con Cloud Storage.',
+                'status': 503
+            }), 503
+        
+        # Obtener datos del request
+        data = request.get_json()
+        logger.info(f"📥 Datos recibidos: {list(data.keys())}")
+        
+        # Validar que tenemos todos los campos
+        campos_faltantes = [f for f in FEATURE_NAMES if f not in data]
+        if campos_faltantes:
+            return jsonify({
+                'error': f'Campos faltantes: {", ".join(campos_faltantes)}',
+                'status': 400
+            }), 400
+        
+        # Crear DataFrame
+        df_input = pd.DataFrame([data])
+        
+        # Validar rangos
+        validacion = validar_datos(df_input)
+        if not validacion['valido']:
+            return jsonify({
+                'error': validacion['mensaje'],
+                'status': 400
+            }), 400
+        
+        # Encoding de variables categóricas
+        df_encoded = df_input.copy()
+        if encoders:
+            for col in df_encoded.select_dtypes(include='object').columns:
+                if col in encoders:
+                    try:
+                        df_encoded[col] = encoders[col].transform(df_encoded[col])
+                    except ValueError as e:
+                        return jsonify({
+                            'error': f'Valor inválido en {col}: {str(e)}',
+                            'status': 400
+                        }), 400
+        
+        # Predicción
+        prediccion = xgb_model.predict(df_encoded)[0]
+        probabilidades = xgb_model.predict_proba(df_encoded)[0]
+        
+        # Decodificar predicción
+        if le_target is not None:
+            prediccion_label = le_target.classes_[prediccion]
         else:
-            st.write(f"Procesando {idx+1}/{len(blobs)}: `{short}`")
-            result = process_single_blob(bucket_name, blob.name, int(limite))
+            prediccion_label = 'Success' if prediccion == 1 else 'Failure'
+        
+        # Retornar resultado
+        resultado = {
+            'prediccion': prediccion_label,
+            'probabilidad_failure': float(probabilidades[0]),
+            'probabilidad_success': float(probabilidades[1]),
+            'confianza': float(max(probabilidades)),
+            'status': 200,
+            'mensaje': 'Predicción realizada exitosamente'
+        }
+        
+        logger.info(f"✅ Predicción: {resultado['prediccion']} (confianza: {resultado['confianza']:.2%})")
+        return jsonify(resultado), 200
+    
+    except Exception as e:
+        logger.error(f"❌ Error en predicción: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 500
+        }), 500
 
-            if result is not None:
-                r2, mae, count = result
-                entry = {"archivo": short, "R2_acumulado": r2, "MAE_acumulado": mae, "registros": count}
-                st.session_state.history.append(entry)
-                st.session_state.processed_files.append(short)
+@app.route('/api/variables', methods=['GET'])
+def obtener_variables():
+    """Retorna información sobre las variables para el frontend"""
+    return jsonify({
+        'features': FEATURE_NAMES,
+        'categorical_options': CATEGORICAL_OPTIONS,
+        'ranges': RANGES,
+        'status': 200
+    }), 200
 
-                st.write(f"Registros procesados: **{count}**")
-                st.write(f"R² acumulado: **{r2:.4f}**")
-                st.write(f"MAE acumulado: **{mae:.4f}**")
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check para Cloud Run"""
+    status = {
+        'status': 'healthy',
+        'model_loaded': xgb_model is not None,
+        'encoders_loaded': encoders is not None,
+        'target_encoder_loaded': le_target is not None
+    }
+    
+    code = 200 if all(status.values()) else 503
+    return jsonify(status), code
 
-                save_model_to_gcs(model, bucket_name)
-                save_history_to_gcs(bucket_name)
+# ════════════════════════════════════════════════════════════════════════════
+# FUNCIONES AUXILIARES
+# ════════════════════════════════════════════════════════════════════════════
 
-        st.session_state.index += 1
+def validar_datos(df):
+    """Validar rangos de datos numéricos"""
+    for col, (min_val, max_val) in RANGES.items():
+        if col in df.columns:
+            valor = df[col].values[0]
+            if not (min_val <= valor <= max_val):
+                return {
+                    'valido': False,
+                    'mensaje': f'{col} debe estar entre {min_val} y {max_val}. Valor ingresado: {valor}'
+                }
+    return {'valido': True}
 
-# =========================================================
-# ESTADO ACTUAL
-# =========================================================
-st.markdown("---")
-st.subheader("Estado actual del modelo")
+# ════════════════════════════════════════════════════════════════════════════
+# MANEJO DE ERRORES
+# ════════════════════════════════════════════════════════════════════════════
 
-last = st.session_state.history[-1] if st.session_state.history else {}
-st.write(f"Archivos procesados: **{st.session_state.index}**")
-st.write(f"R² acumulado actual: **{last.get('R2_acumulado', 0.0):.4f}**")
-st.write(f"MAE acumulado actual: **{last.get('MAE_acumulado', 0.0):.4f}**")
+@app.errorhandler(404)
+def no_encontrado(error):
+    return jsonify({'error': 'Ruta no encontrada', 'status': 404}), 404
 
-if st.session_state.history:
-    df_hist = pd.DataFrame(st.session_state.history)
+@app.errorhandler(500)
+def error_servidor(error):
+    return jsonify({'error': 'Error interno del servidor', 'status': 500}), 500
 
-    st.subheader("Historial de procesamiento")
-    st.dataframe(df_hist)
+# ════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ════════════════════════════════════════════════════════════════════════════
 
-    st.subheader("Evolución R² acumulado")
-    st.line_chart(df_hist[["R2_acumulado"]])
-
-    st.subheader("Evolución MAE acumulado")
-    st.line_chart(df_hist[["MAE_acumulado"]])
-
-st.caption("Cloud Run + River • Dataset público de taxis NYC")
-
-
-
-
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    logger.info(f"🚀 Iniciando OvaBoost en puerto {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
 

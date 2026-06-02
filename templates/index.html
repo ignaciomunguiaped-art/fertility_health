@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OvaBoost - Predicción de Resultados de Fertilidad</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .form-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .form-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .form-group.full {
+            grid-template-columns: 1fr;
+        }
+
+        .input-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 0.95em;
+        }
+
+        input[type="number"],
+        input[type="text"],
+        select {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        input[type="number"]:focus,
+        input[type="text"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        .helper-text {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 3px;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-predict {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            grid-column: 1 / -1;
+        }
+
+        .btn-predict:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-reset {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-reset:hover {
+            background: #e0e0e0;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result.success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+        }
+
+        .result.failure {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+
+        .result h3 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .prediction-box {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .metric {
+            background: rgba(255, 255, 255, 0.5);
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        .confidence-bar {
+            background: rgba(255, 255, 255, 0.3);
+            height: 10px;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-link {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .info-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .info-link a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .form-group {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .prediction-box {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🥚 OvaBoost</h1>
+            <p>Predicción de Resultados de Fertilidad con IA</p>
+        </div>
+
+        <div class="content">
+            <form id="predictionForm">
+                <!-- DATOS DEMOGRÁFICOS -->
+                <div class="form-section">
+                    <h2 class="section-title">📊 Datos Demográficos</h2>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="Female_Age">Edad de la Mujer (años) *</label>
+                            <input type="number" id="Female_Age" name="Female_Age" min="20" max="50" required>
+                            <span class="helper-text">20-50 años</span>
+                        </div>
+                        <div class="input-wrapper">
+                            <label for="Male_Age">Edad del Hombre (años) *</label>
+                            <input type="number" id="Male_Age" name="Male_Age" min="20" max="70" required>
+                            <span class="helper-text">20-70 años</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="BMI">Índice de Masa Corporal (BMI) *</label>
+                            <input type="number" id="BMI" name="BMI" min="15" max="40" step="0.1" required>
+                            <span class="helper-text">15-40 kg/m²</span>
+                        </div>
+                        <div class="input-wrapper">
+                            <label for="Trying_Duration_Months">Tiempo Intentando (meses) *</label>
+                            <input type="number" id="Trying_Duration_Months" name="Trying_Duration_Months" min="1" max="120" required>
+                            <span class="helper-text">1-120 meses</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SALUD REPRODUCTIVA FEMENINA -->
+                <div class="form-section">
+                    <h2 class="section-title">👩 Salud Reproductiva Femenina</h2>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="Menstrual_Regularity">Regularidad Menstrual *</label>
+                            <select id="Menstrual_Regularity" name="Menstrual_Regularity" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Irregular">Irregular</option>
+                            </select>
+                        </div>
+                        <div class="input-wrapper">
+                            <label for="PCOS">¿Tiene PCOS? *</label>
+                            <select id="PCOS" name="PCOS" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="No">No</option>
+                                <option value="Yes">Sí</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SALUD REPRODUCTIVA MASCULINA -->
+                <div class="form-section">
+                    <h2 class="section-title">👨 Salud Reproductiva Masculina</h2>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="Sperm_Count_Million_per_ml">Conteo de Esperma (millones/ml) *</label>
+                            <input type="number" id="Sperm_Count_Million_per_ml" name="Sperm_Count_Million_per_ml" min="0" max="200" step="0.1" required>
+                            <span class="helper-text">0-200 millones/ml</span>
+                        </div>
+                        <div class="input-wrapper">
+                            <label for="Motility_%">Movilidad de Esperma (%) *</label>
+                            <input type="number" id="Motility_%" name="Motility_%" min="0" max="100" step="0.1" required>
+                            <span class="helper-text">0-100%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ESTILO DE VIDA -->
+                <div class="form-section">
+                    <h2 class="section-title">💪 Estilo de Vida y Hábitos</h2>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="Stress_Level">Nivel de Estrés *</label>
+                            <select id="Stress_Level" name="Stress_Level" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="Low">Bajo</option>
+                                <option value="Medium">Medio</option>
+                                <option value="High">Alto</option>
+                            </select>
+                        </div>
+                        <div class="input-wrapper">
+                            <label for="Smoking">¿Fuma? *</label>
+                            <select id="Smoking" name="Smoking" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="0">No</option>
+                                <option value="1">Sí</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="input-wrapper">
+                            <label for="Alcohol_Intake">Consumo de Alcohol *</label>
+                            <select id="Alcohol_Intake" name="Alcohol_Intake" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="None">Ninguno</option>
+                                <option value="Moderate">Moderado</option>
+                                <option value="High">Alto</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TRATAMIENTO -->
+                <div class="form-section">
+                    <h2 class="section-title">💊 Tratamiento</h2>
+                    <div class="form-group full">
+                        <div class="input-wrapper">
+                            <label for="Treatment_Type">Tipo de Tratamiento *</label>
+                            <select id="Treatment_Type" name="Treatment_Type" required>
+                                <option value="">Selecciona una opción</option>
+                                <option value="IVF">FIV (In Vitro Fertilization)</option>
+                                <option value="Medication">Medicación</option>
+                                <option value="None">Ninguno</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTONES -->
+                <div class="button-group">
+                    <button type="reset" class="btn-reset">🔄 Limpiar Formulario</button>
+                    <button type="submit" class="btn-predict">🔮 Predecir Resultado</button>
+                </div>
+            </form>
+
+            <!-- LOADING -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Procesando predicción...</p>
+            </div>
+
+            <!-- RESULTADO -->
+            <div class="result" id="result">
+                <div id="resultContent"></div>
+            </div>
+
+            <!-- INFO -->
+            <div class="info-link">
+                <a href="/info">ℹ️ Información sobre el modelo y variables</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('predictionForm');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const resultContent = document.getElementById('resultContent');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Obtener datos del formulario
+            const formData = new FormData(form);
+            const data = {};
+
+            // Convertir a tipos correctos
+            formData.forEach((value, key) => {
+                if (['Female_Age', 'Male_Age', 'BMI', 'Sperm_Count_Million_per_ml', 'Motility_%', 'Trying_Duration_Months'].includes(key)) {
+                    data[key] = parseFloat(value);
+                } else if (key === 'Smoking') {
+                    data[key] = parseInt(value);
+                } else {
+                    data[key] = value;
+                }
+            });
+
+            console.log('Enviando datos:', data);
+
+            // Mostrar loading
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            try {
+                // Hacer petición
+                const response = await fetch('/api/prediccion', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const resultData = await response.json();
+                console.log('Respuesta:', resultData);
+
+                loading.style.display = 'none';
+
+                if (response.ok) {
+                    // Éxito
+                    const isSuccess = resultData.prediccion === 'Success';
+                    const probabilidadSuccess = (resultData.probabilidad_success * 100).toFixed(1);
+                    const probabilidadFailure = (resultData.probabilidad_failure * 100).toFixed(1);
+                    const confianza = (resultData.confianza * 100).toFixed(1);
+
+                    resultContent.innerHTML = `
+                        <h3>✅ Predicción Realizada</h3>
+                        <div class="prediction-box">
+                            <div class="metric">
+                                <div class="metric-label">Resultado Predicho</div>
+                                <div class="metric-value" style="color: ${isSuccess ? '#28a745' : '#dc3545'}">
+                                    ${isSuccess ? '✨ ÉXITO' : '❌ FRACASO'}
+                                </div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Confianza del Modelo</div>
+                                <div class="metric-value">${confianza}%</div>
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" style="width: ${confianza}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="prediction-box">
+                            <div class="metric">
+                                <div class="metric-label">Probabilidad de Éxito</div>
+                                <div class="metric-value" style="color: #28a745">${probabilidadSuccess}%</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Probabilidad de Fracaso</div>
+                                <div class="metric-value" style="color: #dc3545">${probabilidadFailure}%</div>
+                            </div>
+                        </div>
+                        <p style="margin-top: 15px; font-size: 0.95em;">
+                            <strong>Nota:</strong> Esta predicción es resultado de un modelo de Machine Learning 
+                            entrenado con datos reales. Consulta con profesionales médicos para decisiones clínicas.
+                        </p>
+                    `;
+
+                    result.className = `result ${isSuccess ? 'success' : 'failure'}`;
+                    result.style.display = 'block';
+                } else {
+                    // Error
+                    resultContent.innerHTML = `
+                        <h3>⚠️ Error en la Predicción</h3>
+                        <p>${resultData.error || 'Error desconocido'}</p>
+                    `;
+                    result.className = 'result error';
+                    result.style.display = 'block';
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                resultContent.innerHTML = `
+                    <h3>❌ Error de Conexión</h3>
+                    <p>${error.message}</p>
+                `;
+                result.className = 'result error';
+                result.style.display = 'block';
+                console.error('Error:', error);
+            }
+        });
+    </script>
+</body>
+</html>
