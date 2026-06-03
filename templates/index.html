@@ -145,6 +145,16 @@
             background: #e0e0e0;
         }
 
+        .btn-random {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffc107;
+        }
+
+        .btn-random:hover {
+            background: #ffe69c;
+        }
+
         .result {
             margin-top: 30px;
             padding: 20px;
@@ -275,7 +285,7 @@
     <div class="container">
         <div class="header">
             <h1>🥚 Baby Predictor</h1>
-            <p>Predicción de Resultados de Fertilidad con IA</p>
+            <p>Predicción de Resultados de Fertilidad</p>
         </div>
 
         <div class="content">
@@ -297,7 +307,7 @@
                     </div>
                     <div class="form-group">
                         <div class="input-wrapper">
-                            <label for="BMI">Índice de Masa Corporal (BMI) *</label>
+                            <label for="BMI">Índice de Masa Corporal de la Mujer (BMI) *</label>
                             <input type="number" id="BMI" name="BMI" min="15" max="40" step="0.1" required>
                             <span class="helper-text">15-40 kg/m²</span>
                         </div>
@@ -403,6 +413,7 @@
                 <!-- BOTONES -->
                 <div class="button-group">
                     <button type="reset" class="btn-reset">🔄 Limpiar Formulario</button>
+                    <button type="button" class="btn-random" onclick="generarDatosAleatorios()">🎲 Datos Aleatorios</button>
                     <button type="submit" class="btn-predict">🔮 Predecir Resultado</button>
                 </div>
             </form>
@@ -426,6 +437,28 @@
     </div>
 
     <script>
+        function rnd(min, max, decimals = 0) {
+            const val = Math.random() * (max - min) + min;
+            return decimals ? parseFloat(val.toFixed(decimals)) : Math.floor(val);
+        }
+
+        function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+        function generarDatosAleatorios() {
+            document.getElementById('Female_Age').value = rnd(20, 50);
+            document.getElementById('Male_Age').value = rnd(20, 70);
+            document.getElementById('BMI').value = rnd(15, 40, 1);
+            document.getElementById('Trying_Duration_Months').value = rnd(1, 120);
+            document.getElementById('Menstrual_Regularity').value = pick(['Regular', 'Irregular']);
+            document.getElementById('PCOS').value = pick(['No', 'Yes']);
+            document.getElementById('Sperm_Count_Million_per_ml').value = rnd(0, 200, 1);
+            document.getElementById('Motility_%').value = rnd(0, 100, 1);
+            document.getElementById('Stress_Level').value = pick(['Low', 'Medium', 'High']);
+            document.getElementById('Smoking').value = pick(['0', '1']);
+            document.getElementById('Alcohol_Intake').value = pick(['None', 'Moderate', 'High']);
+            document.getElementById('Treatment_Type').value = pick(['IVF', 'Medication', 'None']);
+        }
+
         const form = document.getElementById('predictionForm');
         const loading = document.getElementById('loading');
         const result = document.getElementById('result');
@@ -479,19 +512,10 @@
 
                     resultContent.innerHTML = `
                         <h3>✅ Predicción Realizada</h3>
-                        <div class="prediction-box">
-                            <div class="metric">
-                                <div class="metric-label">Resultado Predicho</div>
-                                <div class="metric-value" style="color: ${isSuccess ? '#28a745' : '#dc3545'}">
-                                    ${isSuccess ? '✨ ÉXITO' : '❌ FRACASO'}
-                                </div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Confianza del Modelo</div>
-                                <div class="metric-value">${confianza}%</div>
-                                <div class="confidence-bar">
-                                    <div class="confidence-fill" style="width: ${confianza}%"></div>
-                                </div>
+                        <div class="prediction-box" style="display:block; text-align:center; padding: 18px 0;">
+                            <div class="metric-label">Resultado Predicho</div>
+                            <div class="metric-value" style="color: ${isSuccess ? '#28a745' : '#dc3545'}; font-size: 2em; margin-top: 6px;">
+                                ${isSuccess ? '✨ ÉXITO' : '❌ FRACASO'}
                             </div>
                         </div>
                         <div class="prediction-box">
@@ -505,7 +529,7 @@
                             </div>
                         </div>
                         <p style="margin-top: 15px; font-size: 0.95em;">
-                            <strong>Nota:</strong> Esta predicción es resultado de un modelo de Machine Learning 
+                            <strong>Nota:</strong> Esta predicción es resultado de un modelo de Machine Learning
                             entrenado con datos reales. Consulta con profesionales médicos para decisiones clínicas.
                         </p>
                     `;
