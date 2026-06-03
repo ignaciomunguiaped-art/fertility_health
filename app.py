@@ -212,7 +212,9 @@ def hacer_prediccion():
         cat_cols = ['Menstrual_Regularity', 'PCOS', 'Stress_Level', 'Alcohol_Intake']
         for col in cat_cols:
             df_encoded[col] = df_encoded[col].astype('category')
-        
+
+        df_encoded = df_encoded[list(xgb_model.feature_names_in_)]
+
         # Predicción
         prediccion = xgb_model.predict(df_encoded)[0]
         probabilidades = xgb_model.predict_proba(df_encoded)[0]
